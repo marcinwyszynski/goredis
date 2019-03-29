@@ -56,12 +56,17 @@ func (s *sessionHandler) handle() {
 }
 
 func (s *sessionHandler) handleGet(args []string) error {
-	if len(args) != 1 {
+	if len(args) < 1 {
 		_, err := fmt.Fprintln(s.conn, "-ERR wrong number of arguments for 'get' command")
 		return err
 	}
 
-	value, found, err := s.store.get(args[0])
+	key, args, err := consumeQuotes(args)
+	if err != nil {
+		return err
+	}
+
+	value, found, err := s.store.get(key)
 	if err != nil {
 		return errors.Wrap(err, "could not read from the store")
 	}
@@ -92,15 +97,44 @@ func (s *sessionHandler) handleSet(args []string) error {
 		return err
 	}
 
-	if err := s.store.set(args[0], args[1]); err != nil {
+	key, args, err := consumeQuotes(args)
+	if err != nil {
+		return err
+	}
+
+	value, _, err := consumeQuotes(args)
+	if err != nil {
+		return err
+	}
+
+	if err := s.store.set(key, value); err != nil {
 		return errors.Wrap(err, "could not write to the store")
 	}
 
-	_, err := fmt.Fprintln(s.conn, "+OK")
+	_, err = fmt.Fprintln(s.conn, "+OK")
 	return err
 }
 
 func (s *sessionHandler) handleUnknown(args []string) error {
 	_, err := fmt.Fprintf(s.conn, "-ERR unknown command `%s`, with args beginning with %s\n", args[0], args[1:])
 	return err
+}
+
+func consumeQuotes(args []string) (value string, rest []string, err error) {
+	if !strings.HasPrefix(args[0], "\"") {
+		return args[0], args[1:], nil
+	}
+
+	var valueArgs []string
+	for index, arg := range args {
+		valueArgs = append(valueArgs, arg)
+		rest = args[index+1:]
+		if strings.HasSuffix(arg, "\"") {
+			value = strings.Trim(strings.Join(valueArgs, " "), "\"")
+			return
+		}
+	}
+
+	err = errors.New("unbalanced quotes")
+	return
 }
