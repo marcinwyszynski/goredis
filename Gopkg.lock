@@ -2,6 +2,14 @@
 
 
 [[projects]]
+  branch = "master"
+  digest = "1:473e7c5cbc58c538bce66e0ca2a033d31a3e7d9c6d5d96c6df1657b588bddac3"
+  name = "github.com/google/shlex"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "c34317bd91bf98fab745d77b03933cf8769299fe"
+
+[[projects]]
   digest = "1:edbef42561faa44c19129b68d1e109fbc1647f63239250391eadc8d0e7c9f669"
   name = "github.com/kelseyhightower/envconfig"
   packages = ["."]
@@ -56,6 +64,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/google/shlex",
     "github.com/kelseyhightower/envconfig",
     "github.com/pkg/errors",
     "github.com/sirupsen/logrus",

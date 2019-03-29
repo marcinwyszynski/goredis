@@ -7,6 +7,7 @@ import (
 	"net/textproto"
 	"strings"
 
+	"github.com/google/shlex"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -17,13 +18,18 @@ type sessionHandler struct {
 	store  store
 }
 
+func (s *sessionHandler) badArgs(command string) error {
+	_, err := fmt.Fprintf(s.conn, "-ERR wrong number of arguments for '%s' command\n", command)
+	return err
+}
+
 func (s *sessionHandler) handle() {
 	defer s.logger.Info("Closed connection")
 	defer s.conn.Close()
 
 	buffer := bufio.NewReader(s.conn)
 	for {
-		line, err := textproto.NewReader(buffer).ReadLine()
+		command, err := textproto.NewReader(buffer).ReadLine()
 		if err == io.EOF {
 			break
 		} else if err != nil {
@@ -31,42 +37,44 @@ func (s *sessionHandler) handle() {
 			break
 		}
 
-		command := strings.Split(line, " ")
-		switch strings.ToLower(command[0]) {
-		case "get":
-			err = s.handleGet(command[1:])
-		case "ping":
-			err = s.handlePing(command[1:])
-		case "set":
-			err = s.handleSet(command[1:])
-		default:
-			err = s.handleUnknown(command)
-		}
-
+		err = s.handleCommand(command)
 		if err == nil {
 			continue
 		}
 
 		if err != io.EOF {
-			s.logger.Errorf("Could not handle command %s: %v", line, err)
+			s.logger.Errorf("Could not handle command %s: %v", command, err)
 		}
 
 		break
 	}
 }
 
-func (s *sessionHandler) handleGet(args []string) error {
-	if len(args) < 1 {
-		_, err := fmt.Fprintln(s.conn, "-ERR wrong number of arguments for 'get' command")
-		return err
-	}
-
-	key, args, err := consumeQuotes(args)
+func (s *sessionHandler) handleCommand(command string) error {
+	args, err := shlex.Split(command)
 	if err != nil {
+		_, err := fmt.Fprintf(s.conn, "-ERR malformed line: %v\n", err)
 		return err
 	}
 
-	value, found, err := s.store.get(key)
+	switch strings.ToLower(args[0]) {
+	case "get":
+		return s.handleGet(args[1:])
+	case "ping":
+		return s.handlePing(args[1:])
+	case "set":
+		return s.handleSet(args[1:])
+	default:
+		return s.handleUnknown(args)
+	}
+}
+
+func (s *sessionHandler) handleGet(args []string) error {
+	if len(args) != 1 {
+		return s.badArgs("get")
+	}
+
+	value, found, err := s.store.get(args[0])
 	if err != nil {
 		return errors.Wrap(err, "could not read from the store")
 	}
@@ -81,10 +89,13 @@ func (s *sessionHandler) handleGet(args []string) error {
 }
 
 func (s *sessionHandler) handlePing(args []string) error {
-	response := "PONG"
+	if len(args) > 1 {
+		return s.badArgs("ping")
+	}
 
-	if len(args) > 0 {
-		response = strings.Trim(strings.Join(args, " "), "\"")
+	response := "PONG"
+	if len(args) == 1 {
+		response = args[0]
 	}
 
 	_, err := fmt.Fprintf(s.conn, "%q\n", response)
@@ -93,48 +104,18 @@ func (s *sessionHandler) handlePing(args []string) error {
 
 func (s *sessionHandler) handleSet(args []string) error {
 	if len(args) < 2 {
-		_, err := fmt.Fprintln(s.conn, "-ERR wrong number of arguments for 'set' command")
-		return err
+		return s.badArgs("set")
 	}
 
-	key, args, err := consumeQuotes(args)
-	if err != nil {
-		return err
-	}
-
-	value, _, err := consumeQuotes(args)
-	if err != nil {
-		return err
-	}
-
-	if err := s.store.set(key, value); err != nil {
+	if err := s.store.set(args[0], args[1]); err != nil {
 		return errors.Wrap(err, "could not write to the store")
 	}
 
-	_, err = fmt.Fprintln(s.conn, "+OK")
+	_, err := fmt.Fprintln(s.conn, "+OK")
 	return err
 }
 
 func (s *sessionHandler) handleUnknown(args []string) error {
 	_, err := fmt.Fprintf(s.conn, "-ERR unknown command `%s`, with args beginning with %s\n", args[0], args[1:])
 	return err
-}
-
-func consumeQuotes(args []string) (value string, rest []string, err error) {
-	if !strings.HasPrefix(args[0], "\"") {
-		return args[0], args[1:], nil
-	}
-
-	var valueArgs []string
-	for index, arg := range args {
-		valueArgs = append(valueArgs, arg)
-		rest = args[index+1:]
-		if strings.HasSuffix(arg, "\"") {
-			value = strings.Trim(strings.Join(valueArgs, " "), "\"")
-			return
-		}
-	}
-
-	err = errors.New("unbalanced quotes")
-	return
 }
