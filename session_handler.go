@@ -1,0 +1,106 @@
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"net/textproto"
+	"strings"
+
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+)
+
+type sessionHandler struct {
+	conn   io.ReadWriteCloser
+	logger *logrus.Entry
+	store  store
+}
+
+func (s *sessionHandler) handle() {
+	defer s.logger.Info("Closed connection")
+	defer s.conn.Close()
+
+	buffer := bufio.NewReader(s.conn)
+	for {
+		line, err := textproto.NewReader(buffer).ReadLine()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			s.logger.Errorf("Could not read command: %v", err)
+			break
+		}
+
+		command := strings.Split(line, " ")
+		switch strings.ToLower(command[0]) {
+		case "get":
+			err = s.handleGet(command[1:])
+		case "ping":
+			err = s.handlePing(command[1:])
+		case "set":
+			err = s.handleSet(command[1:])
+		default:
+			err = s.handleUnknown(command)
+		}
+
+		if err == nil {
+			continue
+		}
+
+		if err != io.EOF {
+			s.logger.Errorf("Could not handle command %s: %v", line, err)
+		}
+
+		break
+	}
+}
+
+func (s *sessionHandler) handleGet(args []string) error {
+	if len(args) != 1 {
+		_, err := fmt.Fprintln(s.conn, "-ERR wrong number of arguments for 'get' command")
+		return err
+	}
+
+	value, found, err := s.store.get(args[0])
+	if err != nil {
+		return errors.Wrap(err, "could not read from the store")
+	}
+
+	if !found {
+		_, err := fmt.Fprintln(s.conn, "$-1")
+		return err
+	}
+
+	_, err = fmt.Fprintf(s.conn, "$%d\n%s\n", len(value), value)
+	return err
+}
+
+func (s *sessionHandler) handlePing(args []string) error {
+	response := "PONG"
+
+	if len(args) > 0 {
+		response = strings.Trim(strings.Join(args, " "), "\"")
+	}
+
+	_, err := fmt.Fprintf(s.conn, "%q\n", response)
+	return err
+}
+
+func (s *sessionHandler) handleSet(args []string) error {
+	if len(args) < 2 {
+		_, err := fmt.Fprintln(s.conn, "-ERR wrong number of arguments for 'set' command")
+		return err
+	}
+
+	if err := s.store.set(args[0], args[1]); err != nil {
+		return errors.Wrap(err, "could not write to the store")
+	}
+
+	_, err := fmt.Fprintln(s.conn, "+OK")
+	return err
+}
+
+func (s *sessionHandler) handleUnknown(args []string) error {
+	_, err := fmt.Fprintf(s.conn, "-ERR unknown command `%s`, with args beginning with %s\n", args[0], args[1:])
+	return err
+}
