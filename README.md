@@ -2,6 +2,49 @@
 
 In the wild, Go is used as a low-level, though not entirely "systems" language. While it's found in great many places these days, its two mainstays are network programming and cloud. During our first few weeks we're going to work on both, while learning some concepts of Go and AWS. Ultimately, we will try to create a standalone binary that implements (some of) [Redis protocol](https://redis.io/topics/protocol) while using DynamoDB for storage.
 
+## Week 3
+
+In week 2 we decided to skip the authentication bit and only focus on testing, which is always a huge topic, especially in Go where there usually isn't one established way of doing things. We will roll over the authentication bit to week 3.
+
+The main topic of week 3 however is DynamoDB integration. You will need to set up a simple table to store key-value combinations, and provide the implementation of the `Store` interface that works with DynamoDB API.
+
+As a reminder, `Store` is defined as:
+
+```go
+type Store interface {
+    Get(key string) (value string, found bool, err error)
+    Set(key string, value string) error
+}
+```
+
+Unlike in-memory implementation, this one will be capable of returning actual errors!
+
+AWS integration is usually tricky to test. There are two possible approaches - either running a local DynamoDB and connecting to that for your tests, or mocking out AWS calls. We are going to go down the second route, though feel free to experiment with the first one using Docker Compose.
+
+Luckily, for each Go SDK, AWS provides interfaces that are implemented by actual client, and your Dynamo implemenation of the `Store` should use [that interface](https://docs.aws.amazon.com/sdk-for-go/api/service/dynamodb/dynamodbiface/#DynamoDBAPI) to abstract away the actual client.
+
+One problem here is that AWS interfaces are giant, so mocking them would technically require writing implementations of methods that are never used. Here, Go composition comes to the rescue. You can do something like this:
+
+```go
+type mockSomethingComplex struct {
+    mock.Mock
+    something.Complex
+}
+
+func (m *mockSomethingComplex) MockedMethod() error {
+    return m.Called().Error(0)
+}
+```
+
+In this approach, we will only need to mock out methods that are actually used, and have all others forwarded to `nil` instance of `something.Complex` (which - if ever used - would obviosly segfault).
+
+Another thing to note is that there are multiple ways of setting up AWS session. Credentials can come from explicitly set environment variables, a credentials file, instance metadata (in EC2, ECS, EKS and Lambda), and perhaps a few other places I'm not aware of. The usual way of setting up AWS sessions and clients allows the SDK to figure out where it's running and how it should be set up:
+
+```go
+sess := session.Must(session.NewSession())
+client := dynamodb.New(sess)
+```
+
 ## Week 2
 
 In week 2, we are going to make our implementation stateful and give it some decent test coverage. We need to make our application stateful in order to support authorization. Let's see what it looks like when using a "real" Redis, with "bacon" as our password:
