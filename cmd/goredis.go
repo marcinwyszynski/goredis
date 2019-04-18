@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"github.com/kelseyhightower/envconfig"
+	"github.com/marcinwyszynski/goredis/lib"
 	"github.com/sirupsen/logrus"
 )
 
@@ -17,7 +18,7 @@ func main() {
 	envconfig.MustProcess("", &cfg)
 
 	log := logrus.New()
-	store := newInMemoryStore()
+	store := lib.NewInMemoryStore()
 
 	port := fmt.Sprintf(":%d", cfg.Port)
 	log.Infof("About to start serving on port %s", port)
@@ -36,7 +37,7 @@ func main() {
 		logger := log.WithField("remote", conn.RemoteAddr())
 		logger.Infoln("Accepted connection")
 
-		go (&sessionHandler{conn, logger, store}).handle()
+		go (lib.NewSessionHandler(conn, logger, store)).Handle()
 	}
 
 }
