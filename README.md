@@ -2,6 +2,14 @@
 
 In the wild, Go is used as a low-level, though not entirely "systems" language. While it's found in great many places these days, its two mainstays are network programming and cloud. During our first few weeks we're going to work on both, while learning some concepts of Go and AWS. Ultimately, we will try to create a standalone binary that implements (some of) [Redis protocol](https://redis.io/topics/protocol) while using DynamoDB for storage.
 
+## Week 4
+
+In week 3, we created and tested an implementation of `Store` backed by DynamoDB. In order to maintain performance, we also created another implementation of `Store` that uses memory for caching, and DynamoDB as the source of authority. It's not a production-ready implementation because it's pretty heavy on memory and does do any automated expiry - something you'd probably want from a proper implementation like the one [here](https://github.com/bluele/gcache).
+
+Nevertheless, in last week will try to tweak our design in such a way as to support an arbitrarily large cluster of our own Redises, while maintaining the highest possible cache hit ratio. In order to do that, we need to have each of our servers follow the latest changes to DynamoDB.
+
+Luckily, Amazon has a very useful feature called [DynamoDB Streams](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html), which allows to subscribe to database changes in a way similar to Kafka or Kinesis. We will want to link our cache to the stream from our database, and populate it when any new keys are set. You may choose to use a helper library [like this one](https://github.com/urakozz/go-dynamodb-stream-subscriber) or use raw AWS SDK - just note that the latter involves quite a bit of boilerplate.
+
 ## Week 3
 
 In week 2 we decided to skip the authentication bit and only focus on testing, which is always a huge topic, especially in Go where there usually isn't one established way of doing things. We will roll over the authentication bit to week 3.

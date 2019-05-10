@@ -4,13 +4,16 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/marcinwyszynski/goredis/lib"
 	"github.com/sirupsen/logrus"
 )
 
 type config struct {
-	Port int `envconfig:"PORT" default:"6379"`
+	DynamoTable string `envconfig:"DYNAMO_TABLE" required:"true"`
+	Port        int    `envconfig:"PORT" default:"6379"`
 }
 
 func main() {
@@ -18,7 +21,13 @@ func main() {
 	envconfig.MustProcess("", &cfg)
 
 	log := logrus.New()
-	store := lib.NewInMemoryStore()
+
+	session := session.Must(session.NewSession())
+
+	store := lib.NewCachingStore(
+		&lib.DynamoDBStore{API: dynamodb.New(session), TableName: cfg.DynamoTable},
+		lib.NewInMemoryStore(),
+	)
 
 	port := fmt.Sprintf(":%d", cfg.Port)
 	log.Infof("About to start serving on port %s", port)
@@ -39,5 +48,4 @@ func main() {
 
 		go (lib.NewSessionHandler(conn, logger, store)).Handle()
 	}
-
 }
